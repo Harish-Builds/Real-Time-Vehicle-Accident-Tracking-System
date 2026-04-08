@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AccidentTracker — Command Center</title>
+
+  <!-- Firebase 9 compat -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <!-- Leaflet 1.9.4 -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:    #080c10;
+      --surf:  #0e1318;
+      --s2:    #141a21;
+      --s3:    #1c242d;
+      --s4:    #232d38;
+      --b1:    #1e2a35;
+      --b2:    #263340;
+      --txt:   #d4dde8;
+      --t2:    #8a9bb0;
+      --mu:    #4a5a6a;
+      --ac:    #3d9eff;
+      --gr:    #2dce6e;
+      --re:    #ff3d3d;
+      --am:    #f5a623;
+      --pu:    #a78bfa;
+      --te:    #14b8a6;
+      --mono:  'Space Mono', monospace;
+      --sans:  'DM Sans', system-ui, sans-serif;
+      --sw:    312px;
+    }
+
+    html, body { height: 100%; overflow: hidden; }
+    body { background: var(--bg); color: var(--txt); font-family: var(--sans); font-size: 13px; }
+
+    /* HEADER */
+    header {
+      height: 52px; background: var(--surf); border-bottom: 1px solid var(--b1);
+      padding: 0 14px; display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; flex-shrink: 0; z-index: 300; position: relative;
+    }
+    .logo { display: flex; align-items: center; gap: 10px; }
+    .logo-mark {
+      width: 32px; height: 32px;
+      background: linear-gradient(140deg, #ff3d3d, #ff7043);
+      border-radius: 9px; display: flex; align-items: center; justify-content: center;
+      font-size: 16px; box-shadow: 0 0 14px rgba(255,61,61,.3); flex-shrink: 0;
+    }
+    .logo-name { font-size: 13px; font-weight: 700; }
+    .logo-sub  { font-size: 10px; color: var(--mu); }
+    .chips { display: flex; align-items: center; gap: 5px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+      border-radius: 20px; font-size: 10px; font-weight: 600; letter-spacing: .3px;
+      border: 1px solid var(--b2); background: var(--s2); white-space: nowrap;
+      transition: border-color .3s, color .3s;
+    }
+    .cdot { width: 5px; height: 5px; border-radius: 50%; background: var(--mu); flex-shrink: 0; }
+    .chip.ok   { border-color: rgba(45,206,110,.4); color: var(--gr); }
+    .chip.ok   .cdot { background: var(--gr); box-shadow: 0 0 5px var(--gr); animation: blink 2s infinite; }
+    .chip.err  { border-color: rgba(255,61,61,.4);  color: var(--re); }
+    .chip.err  .cdot { background: var(--re); }
+    .chip.warn { border-color: rgba(245,166,35,.4); color: var(--am); }
+    .chip.warn .cdot { background: var(--am); animation: blink .9s infinite; }
+    .chip.info { border-color: rgba(167,139,250,.4); color: var(--pu); }
+    .chip.info .cdot { background: var(--pu); box-shadow: 0 0 5px var(--pu); animation: blink 1.5s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.15} }
+
+    /* LAYOUT */
+    .layout { display: grid; grid-template-columns: var(--sw) 1fr; height: calc(100vh - 52px); }
+
+    /* SIDEBAR */
+    .sidebar {
+      background: var(--surf); border-right: 1px solid var(--b1);
+      overflow-y: auto; overflow-x: hidden;
+      padding: 10px; display: flex; flex-direction: column; gap: 8px;
+    }
+    .sidebar::-webkit-scrollbar { width: 3px; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--s4); border-radius: 2px; }
+
+    /* Accident banner */
+    #acc-banner { display: none; background: rgba(255,61,61,.05); border: 1.5px solid var(--re); border-radius: 10px; padding: 12px 13px; }
+    #acc-banner.active { display: block; animation: acc-p 1.2s infinite; }
+    @keyframes acc-p { 0%,100%{box-shadow:0 0 0 0 rgba(255,61,61,.3)} 50%{box-shadow:0 0 0 10px rgba(255,61,61,0)} }
+    .ban-t { font-size: 12px; font-weight: 700; color: #ff7070; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; letter-spacing: .5px; }
+    .ban-r { font-size: 11px; color: rgba(255,150,150,.85); line-height: 2.1; }
+    .ban-r b { color: #fff; font-family: var(--mono); font-size: 11px; }
+
+    /* Cards */
+    .card { background: var(--s2); border: 1px solid var(--b1); border-radius: 10px; padding: 11px 12px; }
+    .card-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .clbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--mu); display: flex; align-items: center; gap: 5px; }
+    .cldot { width: 4px; height: 4px; border-radius: 50%; }
+
+    /* GPS */
+    .cgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+    .ccell { background: var(--s3); border: 1px solid var(--b2); border-radius: 8px; padding: 7px 9px; }
+    .clbl2 { font-size: 9px; color: var(--mu); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 2px; }
+    .cval  { font-size: 13px; font-weight: 600; font-family: var(--mono); }
+    .cdir  { font-size: 10px; font-weight: 700; color: var(--ac); margin-left: 3px; }
+    .mr    { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--b1); }
+    .mr:last-child { border-bottom: none; }
+    .mk { font-size: 10px; color: var(--t2); }
+    .mv { font-family: var(--mono); font-size: 11px; font-weight: 600; }
+    .sat-bars { display: flex; gap: 2px; align-items: flex-end; }
+    .sat-bar  { width: 4px; border-radius: 1px; }
+    .cbtn {
+      font-size: 10px; color: var(--ac); background: none; border: 1px solid var(--b2);
+      cursor: pointer; padding: 2px 8px; border-radius: 5px; font-family: var(--sans); transition: background .15s;
+    }
+    .cbtn:hover { background: var(--s3); }
+
+    /* Module rows */
+    .mod-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--b1); }
+    .mod-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .mod-l { display: flex; align-items: center; gap: 8px; }
+    .mod-ic { font-size: 14px; width: 22px; text-align: center; flex-shrink: 0; }
+    .mod-n  { font-size: 11px; font-weight: 600; }
+    .mod-s  { font-size: 10px; color: var(--mu); margin-top: 1px; }
+    .pill { font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 20px; border: 1px solid; white-space: nowrap; }
+    .p-ok  { color: var(--gr); border-color: rgba(45,206,110,.4);  background: rgba(45,206,110,.07); }
+    .p-w   { color: var(--am); border-color: rgba(245,166,35,.4);  background: rgba(245,166,35,.07); }
+    .p-e   { color: var(--re); border-color: rgba(255,61,61,.4);   background: rgba(255,61,61,.07); }
+    .p-g   { color: var(--pu); border-color: rgba(167,139,250,.4); background: rgba(167,139,250,.07); }
+    #sms-row { display: none; }
+    #sms-row.show { display: flex; }
+
+    /* Accel */
+    .a-row  { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+    .a-ax   { width: 28px; font-size: 9px; font-weight: 700; font-family: var(--mono); color: var(--mu); flex-shrink: 0; }
+    .a-trk  { flex: 1; height: 7px; background: var(--s3); border-radius: 4px; overflow: visible; position: relative; }
+    .a-trk::after { content: ''; position: absolute; top: -2px; bottom: -2px; left: 40%; width: 1.5px; background: rgba(255,61,61,.4); z-index: 2; }
+    .a-fill { height: 100%; border-radius: 4px; transition: width .15s ease; }
+    .fx { background: linear-gradient(90deg, #1a6fd4, #3d9eff); }
+    .fy { background: linear-gradient(90deg, #0d8f4a, #2dce6e); }
+    .fz { background: linear-gradient(90deg, #b87000, #f5a623); }
+    .fn { background: linear-gradient(90deg, #c42020, #ff3d3d); }
+    .fj { background: linear-gradient(90deg, #6b46c1, #a78bfa); }
+    .a-val { width: 48px; text-align: right; font-size: 10px; font-family: var(--mono); color: var(--t2); flex-shrink: 0; }
+    .a-div { height: 1px; background: var(--b1); margin: 4px 0; }
+    .thr-note { font-size: 9px; color: rgba(255,61,61,.5); margin-top: 5px; display: flex; align-items: center; gap: 4px; }
+
+    /* LCD */
+    .lcd-outer  { background: #0a1a08; border: 1px solid #1a3a14; border-radius: 9px; padding: 10px 12px; }
+    .lcd-hdr    { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+    .lcd-title  { font-size: 9px; font-weight: 700; letter-spacing: .8px; color: #2a6a24; text-transform: uppercase; }
+    .lcd-led    { width: 5px; height: 5px; border-radius: 50%; background: #2dce6e; box-shadow: 0 0 5px #2dce6e; animation: blink 2s infinite; }
+    .lcd-screen { background: #0d2b0a; border: 1px solid #1f4a18; border-radius: 6px; padding: 9px 11px; box-shadow: inset 0 0 14px rgba(0,200,50,.04); }
+    .lcd-line   { font-size: 11px; font-weight: 700; font-family: var(--mono); color: #4dff6e; letter-spacing: 1.2px; line-height: 1.9; text-shadow: 0 0 6px rgba(77,255,110,.45); white-space: pre; max-width: 16ch; overflow: hidden; }
+
+    /* Accident log */
+    #acc-log { max-height: 130px; overflow-y: auto; }
+    #acc-log::-webkit-scrollbar { width: 2px; }
+    #acc-log::-webkit-scrollbar-thumb { background: var(--s4); }
+    .log-item { padding: 7px 9px; margin-bottom: 5px; background: var(--s3); border-left: 2px solid var(--re); border-radius: 0 7px 7px 0; }
+    .log-ts  { font-size: 9px; color: var(--mu); margin-bottom: 2px; }
+    .log-imp { font-size: 11px; font-weight: 700; color: var(--re); margin-bottom: 1px; }
+    .log-crd { font-size: 10px; font-family: var(--mono); color: var(--t2); }
+
+    /* MAP PANEL */
+    #map-wrap { position: relative; overflow: hidden; }
+    #map      { width: 100%; height: 100%; }
+
+    /* Leaflet overrides */
+    .leaflet-container { background: #111820 !important; }
+    .leaflet-control-zoom {
+      border: 1px solid var(--b2) !important; border-radius: 10px !important;
+      overflow: hidden; box-shadow: 0 4px 18px rgba(0,0,0,.5) !important;
+    }
+    .leaflet-control-zoom a {
+      background: var(--s2) !important; color: var(--txt) !important;
+      border-bottom-color: var(--b2) !important; font-size: 16px !important;
+      font-weight: 300 !important; line-height: 28px !important;
+      width: 28px !important; height: 28px !important; transition: background .15s !important;
+    }
+    .leaflet-control-zoom a:hover { background: var(--s3) !important; }
+    .leaflet-control-zoom a:last-child { border-bottom: none !important; }
+    .leaflet-control-attribution {
+      background: rgba(8,12,16,.82) !important; color: var(--mu) !important;
+      font-size: 9px !important; border-radius: 6px 0 0 0 !important; padding: 2px 6px !important;
+    }
+    .leaflet-control-attribution a { color: var(--ac) !important; }
+    .leaflet-popup-content-wrapper {
+      background: var(--surf) !important; border: 1px solid var(--b2) !important;
+      color: var(--txt) !important; border-radius: 12px !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,.75) !important;
+    }
+    .leaflet-popup-tip   { background: var(--surf) !important; }
+    .leaflet-popup-content { margin: 11px 14px !important; font-family: var(--sans); font-size: 12px; }
+    .tt-start {
+      background: rgba(45,206,110,.12) !important; border: 1px solid var(--gr) !important;
+      color: var(--gr) !important; font-size: 9px !important; font-weight: 700 !important;
+      border-radius: 5px !important; padding: 1px 6px !important; box-shadow: none !important;
+    }
+    .tt-start::before { display: none !important; }
+
+    /* Map toolbar */
+    #map-toolbar {
+      position: absolute; top: 12px; left: 12px; z-index: 1000;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .tb-btn {
+      width: 34px; height: 34px; background: rgba(8,12,16,.9); border: 1px solid var(--b2);
+      border-radius: 9px; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 15px; backdrop-filter: blur(6px);
+      box-shadow: 0 4px 14px rgba(0,0,0,.5); transition: background .15s, border-color .2s;
+      color: var(--t2); user-select: none; position: relative;
+    }
+    .tb-btn:hover   { background: rgba(20,26,33,.95); color: var(--txt); border-color: var(--ac); }
+    .tb-btn.active  { background: rgba(61,158,255,.18); border-color: var(--ac); color: var(--ac); }
+    .tb-btn.active:hover { background: rgba(61,158,255,.25); }
+    .tb-tip {
+      position: absolute; left: 42px; top: 50%; transform: translateY(-50%);
+      background: rgba(8,12,16,.95); border: 1px solid var(--b2);
+      color: var(--t2); font-size: 10px; font-family: var(--sans);
+      padding: 3px 9px; border-radius: 6px; white-space: nowrap;
+      pointer-events: none; opacity: 0; transition: opacity .15s; z-index: 1001;
+    }
+    .tb-btn:hover .tb-tip { opacity: 1; }
+
+    /* Layer panel */
+    #layer-panel {
+      position: absolute; top: 12px; left: 56px; z-index: 1001;
+      background: rgba(8,12,16,.95); border: 1px solid var(--b2);
+      border-radius: 11px; padding: 10px; backdrop-filter: blur(8px);
+      box-shadow: 0 8px 32px rgba(0,0,0,.6);
+      display: none; flex-direction: column; gap: 5px; min-width: 175px;
+    }
+    #layer-panel.open { display: flex; }
+    .lp-t { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--mu); margin-bottom: 3px; }
+    .lp-o {
+      display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+      border-radius: 7px; cursor: pointer; font-size: 11px;
+      transition: background .15s; color: var(--t2); border: 1px solid transparent;
+    }
+    .lp-o:hover    { background: var(--s3); color: var(--txt); }
+    .lp-o.sel      { background: rgba(61,158,255,.12); border-color: rgba(61,158,255,.3); color: var(--ac); }
+    .lp-sw { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+
+    /* Speed HUD */
+    #spd-hud {
+      position: absolute; bottom: 28px; left: 14px; z-index: 1000;
+      background: rgba(8,12,16,.92); border: 1px solid var(--b2);
+      border-radius: 13px; padding: 10px 18px; backdrop-filter: blur(8px);
+      box-shadow: 0 4px 20px rgba(0,0,0,.5); min-width: 115px;
+    }
+    .hud-n { font-size: 42px; font-weight: 700; font-family: var(--mono); line-height: 1; transition: color .4s; }
+    .hud-s { font-size: 9px; color: var(--mu); margin-top: 4px; letter-spacing: .3px; }
+    .spd-ok   { color: var(--gr); }
+    .spd-mid  { color: var(--am); }
+    .spd-fast { color: var(--re); }
+
+    /* Map info overlay */
+    #map-info {
+      position: absolute; top: 12px; right: 12px; z-index: 1000;
+      background: rgba(8,12,16,.92); border: 1px solid var(--b2);
+      border-radius: 13px; padding: 12px 14px; backdrop-filter: blur(8px);
+      min-width: 212px; box-shadow: 0 4px 20px rgba(0,0,0,.5); font-size: 11px;
+    }
+    .ov-r { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 4px; }
+    .ov-r:last-child { margin-bottom: 0; }
+    .ov-k { font-size: 9px; color: var(--mu); text-transform: uppercase; letter-spacing: .5px; }
+    .ov-v { font-size: 11px; font-weight: 600; font-family: var(--mono); }
+    .ov-d { height: 1px; background: var(--b1); margin: 6px 0; }
+
+    /* Follow banner */
+    #follow-banner {
+      position: absolute; bottom: 28px; right: 14px; z-index: 1000;
+      background: rgba(8,12,16,.92); border: 1px solid var(--b2);
+      border-radius: 10px; padding: 7px 13px; font-size: 10px; color: var(--mu);
+      backdrop-filter: blur(6px); display: flex; align-items: center; gap: 7px;
+      transition: border-color .3s, color .3s;
+    }
+    #follow-banner.on { border-color: rgba(61,158,255,.4); color: var(--ac); }
+    .fdot { width: 6px; height: 6px; border-radius: 50%; background: var(--mu); transition: background .3s; }
+    #follow-banner.on .fdot { background: var(--ac); animation: blink 1.5s infinite; }
+
+
+
+    /* Alert toast */
+    #alert-toast {
+      position: fixed; bottom: -260px; right: 16px; width: 340px;
+      background: var(--surf); border: 1.5px solid var(--pu);
+      border-radius: 14px; padding: 14px 16px;
+      box-shadow: 0 12px 48px rgba(0,0,0,.8);
+      z-index: 9999; transition: bottom .45s cubic-bezier(.34,1.56,.64,1); pointer-events: none;
+    }
+    #alert-toast.show { bottom: 16px; pointer-events: auto; }
+    .t-hdr  { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .t-ttl  { font-size: 13px; font-weight: 700; color: var(--pu); display: flex; align-items: center; gap: 7px; }
+    .t-pls  { width: 8px; height: 8px; border-radius: 50%; background: var(--pu); animation: blink .8s infinite; }
+    .t-cls  { background: none; border: 1px solid var(--b2); color: var(--mu); font-size: 12px; cursor: pointer; padding: 3px 9px; border-radius: 7px; font-family: var(--sans); transition: background .15s; }
+    .t-cls:hover { background: var(--s3); color: var(--txt); }
+    .t-row  { display: flex; gap: 9px; margin-bottom: 5px; font-size: 11px; }
+    .t-key  { color: var(--mu); min-width: 76px; flex-shrink: 0; }
+    .t-val  { color: var(--txt); font-family: var(--mono); word-break: break-all; }
+    .t-lnk  { color: var(--pu); text-decoration: none; }
+    .t-lnk:hover { text-decoration: underline; }
+    .t-sep  { height: 1px; background: var(--b1); margin: 9px 0 7px; }
+    .t-ft   { font-size: 10px; color: var(--mu); }
+
+    /* Pulse ring for accident marker */
+    @keyframes pulse-ring {
+      0%   { transform: scale(.9); opacity: .8; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+    .acc-pulse {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: rgba(255,61,61,.35);
+      animation: pulse-ring 1.4s ease-out infinite;
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) { :root { --sw: 270px; } }
+    @media (max-width: 768px) {
+      body { overflow: auto; }
+      .layout { display: flex; flex-direction: column; height: auto; }
+      #map-wrap { height: 56vh; }
+      .sidebar { border-right: none; border-top: 1px solid var(--b1); }
+      header { height: auto; padding: 8px 12px; flex-wrap: wrap; }
+      #alert-toast { width: calc(100vw - 14px); left: 7px; right: 7px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ALERT TOAST -->
+<div id="alert-toast">
+  <div class="t-hdr">
+    <div class="t-ttl"><div class="t-pls"></div>🚨 SMS Alert Dispatched</div>
+    <button class="t-cls" onclick="closeToast()">✕ Dismiss</button>
+  </div>
+  <div class="t-row"><span class="t-key">Sent to</span>   <span class="t-val" id="t-phone">—</span></div>
+  <div class="t-row"><span class="t-key">Impact</span>    <span class="t-val" id="t-impact">—</span></div>
+  <div class="t-row"><span class="t-key">Latitude</span>  <span class="t-val" id="t-lat">—</span></div>
+  <div class="t-row"><span class="t-key">Longitude</span> <span class="t-val" id="t-lon">—</span></div>
+  <div class="t-row"><span class="t-key">Map Link</span>  <span class="t-val"><a id="t-maplink" href="#" target="_blank" class="t-lnk">Open Google Maps ↗</a></span></div>
+  <div class="t-sep"></div>
+  <div class="t-ft" id="t-foot">—</div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-mark">🚨</div>
+    <div>
+      <div class="logo-name">AccidentTracker</div>
+      <div class="logo-sub" id="header-sub">Connecting to Firebase…</div>
+    </div>
+  </div>
+  <div class="chips">
+    <div class="chip err"  id="chip-fb">  <div class="cdot"></div>Firebase</div>
+    <div class="chip warn" id="chip-gps"> <div class="cdot"></div>GPS</div>
+    <div class="chip"      id="chip-gsm"> <div class="cdot"></div>GSM</div>
+    <div class="chip err"  id="chip-dev"> <div class="cdot"></div>ESP32</div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+
+    <div id="acc-banner">
+      <div class="ban-t">⚠ ACCIDENT DETECTED</div>
+      <div class="ban-r">Impact &nbsp; : <b id="b-impact">—</b> m/s²</div>
+      <div class="ban-r">Jerk &nbsp;&nbsp;&nbsp;: <b id="b-jerk">—</b> m/s³</div>
+      <div class="ban-r">Latitude : <b id="b-lat">—</b></div>
+      <div class="ban-r">Longitude: <b id="b-lon">—</b></div>
+      <div class="ban-r">Time &nbsp;&nbsp;&nbsp;: <b id="b-time">—</b></div>
+    </div>
+
+    <!-- GPS coords -->
+    <div class="card">
+      <div class="card-hdr">
+        <span class="clbl"><span class="cldot" style="background:var(--ac)"></span>GPS Coordinates</span>
+        <button class="cbtn" onclick="copyCoords()">⎘ Copy</button>
+      </div>
+      <div class="cgrid">
+        <div class="ccell"><div class="clbl2">Latitude</div><div><span class="cval" id="c-lat">—</span><span class="cdir" id="c-latd"></span></div></div>
+        <div class="ccell"><div class="clbl2">Longitude</div><div><span class="cval" id="c-lon">—</span><span class="cdir" id="c-lond"></span></div></div>
+      </div>
+      <div>
+        <div class="mr"><span class="mk">Satellites</span><div style="display:flex;align-items:center;gap:8px"><div class="sat-bars" id="sat-bars"></div><span class="mv" id="c-sats">0</span></div></div>
+        <div class="mr"><span class="mk">Speed</span>    <span class="mv" id="c-spd">— km/h</span></div>
+        <div class="mr"><span class="mk">Heading</span>  <span class="mv" id="c-hdg">—</span></div>
+        <div class="mr"><span class="mk">Last Fix</span> <span class="mv" style="color:var(--mu);font-size:10px" id="c-time">—</span></div>
+      </div>
+    </div>
+
+    <!-- Module status -->
+    <div class="card">
+      <div class="card-hdr"><span class="clbl"><span class="cldot" style="background:var(--te)"></span>Module Status</span></div>
+      <div class="mod-row"><div class="mod-l"><span class="mod-ic">🛰</span><div><div class="mod-n">GPS — NEO-7M</div><div class="mod-s" id="sub-gps">Acquiring fix…</div></div></div><div class="pill p-w" id="pill-gps">Searching</div></div>
+      <div class="mod-row"><div class="mod-l"><span class="mod-ic">📡</span><div><div class="mod-n">GSM — SIM900A</div><div class="mod-s" id="sub-gsm">Ready · standby</div></div></div><div class="pill p-g" id="pill-gsm">Standby</div></div>
+      <div class="mod-row" id="sms-row"><div class="mod-l"><span class="mod-ic">🚨</span><div><div class="mod-n">Alert SMS</div><div class="mod-s" id="sub-sms">—</div></div></div><div class="pill p-g">Sent ✓</div></div>
+      <div class="mod-row"><div class="mod-l"><span class="mod-ic">🔥</span><div><div class="mod-n">Firebase RTDB</div><div class="mod-s" id="sub-fb">Connecting…</div></div></div><div class="pill p-w" id="pill-fb">Connecting</div></div>
+      <div class="mod-row"><div class="mod-l"><span class="mod-ic">🔲</span><div><div class="mod-n">ESP32 Device</div><div class="mod-s" id="sub-dev">Waiting…</div></div></div><div class="pill p-w" id="pill-dev">Unknown</div></div>
+      <div class="mod-row"><div class="mod-l"><span class="mod-ic">📳</span><div><div class="mod-n">GY-61 Accel</div><div class="mod-s" id="sub-accel">Awaiting data…</div></div></div><div class="pill p-w" id="pill-accel">Waiting</div></div>
+    </div>
+
+    <!-- Accelerometer -->
+    <div class="card">
+      <div class="card-hdr">
+        <span class="clbl"><span class="cldot" style="background:var(--am)"></span>GY-61 Accelerometer</span>
+        <span style="font-size:9px;color:var(--mu);font-family:var(--mono)">m/s²</span>
+      </div>
+      <div class="a-row"><span class="a-ax" style="color:#3d9eff">X</span><div class="a-trk"><div class="a-fill fx" id="bar-x" style="width:0%"></div></div><span class="a-val" id="val-x">0.00</span></div>
+      <div class="a-row"><span class="a-ax" style="color:#2dce6e">Y</span><div class="a-trk"><div class="a-fill fy" id="bar-y" style="width:0%"></div></div><span class="a-val" id="val-y">0.00</span></div>
+      <div class="a-row"><span class="a-ax" style="color:#f5a623">Z</span><div class="a-trk"><div class="a-fill fz" id="bar-z" style="width:0%"></div></div><span class="a-val" id="val-z">0.00</span></div>
+      <div class="a-div"></div>
+      <div class="a-row"><span class="a-ax" style="color:#ff3d3d;font-size:8px">NET</span><div class="a-trk"><div class="a-fill fn" id="bar-n" style="width:0%"></div></div><span class="a-val" id="val-n">0.00</span></div>
+      <div class="a-row"><span class="a-ax" style="color:#a78bfa;font-size:8px">JRK</span><div class="a-trk"><div class="a-fill fj" id="bar-j" style="width:0%"></div></div><span class="a-val" id="val-j">0.00</span></div>
+      <div class="thr-note"><svg width="8" height="8"><line x1="4" y1="0" x2="4" y2="8" stroke="rgba(255,61,61,.5)" stroke-width="1.5"/></svg>Trigger threshold ≈ 11.9 m/s²</div>
+    </div>
+
+    <!-- LCD simulation -->
+    <div class="card">
+      <div class="card-hdr"><span class="clbl"><span class="cldot" style="background:var(--gr)"></span>LCD I2C Display  (16×2)</span></div>
+      <div class="lcd-outer">
+        <div class="lcd-hdr"><span class="lcd-title">I2C · 0x27</span><div class="lcd-led"></div></div>
+        <div class="lcd-screen">
+          <div class="lcd-line" id="lcd-l0">Accident Tracker</div>
+          <div class="lcd-line" id="lcd-l1">Connecting...   </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Accident log -->
+    <div class="card" style="flex:1;min-height:90px">
+      <div class="card-hdr">
+        <span class="clbl"><span class="cldot" style="background:var(--re)"></span>Accident Log</span>
+        <span style="font-size:9px;color:var(--mu)" id="log-count">0 events</span>
+      </div>
+      <div id="acc-log"><div style="font-size:11px;color:var(--mu);padding:4px 0">No accidents recorded.</div></div>
+    </div>
+
+  </aside>
+
+  <!-- MAP PANEL -->
+  <div id="map-wrap">
+    <div id="map"></div>
+
+    <!-- Toolbar (top-left) -->
+    <div id="map-toolbar">
+      <div class="tb-btn" id="btn-layers" onclick="toggleLayerPanel()">
+        🗺<span class="tb-tip">Map Layers</span>
+      </div>
+      <div class="tb-btn active" id="btn-follow" onclick="toggleFollow()">
+        🎯<span class="tb-tip">Auto-Follow</span>
+      </div>
+      <div class="tb-btn" id="btn-locate" onclick="zoomToVehicle()">
+        📍<span class="tb-tip">Go to Vehicle</span>
+      </div>
+      <div class="tb-btn" id="btn-fit" onclick="fitTrail()">
+        ⛶<span class="tb-tip">Fit Route</span>
+      </div>
+      <div class="tb-btn" id="btn-clear" onclick="clearTrail()">
+        🗑<span class="tb-tip">Clear Trail</span>
+      </div>
+    </div>
+
+    <!-- Layer switcher -->
+    <div id="layer-panel">
+      <div class="lp-t">Map Style</div>
+      <div class="lp-o sel" id="lp-dark"    onclick="setLayer('dark')">
+        <span class="lp-sw" style="background:#1a1a2e"></span>CartoDB Dark
+      </div>
+      <div class="lp-o"     id="lp-osm"     onclick="setLayer('osm')">
+        <span class="lp-sw" style="background:#aad3df"></span>OpenStreetMap
+      </div>
+      <div class="lp-o"     id="lp-topo"    onclick="setLayer('topo')">
+        <span class="lp-sw" style="background:#c5e0a5"></span>OpenTopoMap
+      </div>
+      <div class="lp-o"     id="lp-voyager" onclick="setLayer('voyager')">
+        <span class="lp-sw" style="background:#e8e0d8"></span>CartoDB Voyager
+      </div>
+    </div>
+
+    <!-- Speed HUD -->
+    <div id="spd-hud">
+      <div class="hud-n spd-ok" id="hud-spd">0</div>
+      <div class="hud-s">km/h &nbsp;·&nbsp; <span id="hud-sats">0 sats</span></div>
+    </div>
+
+
+
+    <!-- Info overlay -->
+    <div id="map-info">
+      <div class="ov-r"><span class="ov-k">Device</span>    <span class="ov-v" style="color:var(--ac)" id="ov-dev">vehicle_001</span></div>
+      <div class="ov-d"></div>
+      <div class="ov-r"><span class="ov-k">Latitude</span>  <span class="ov-v" id="ov-lat">—</span></div>
+      <div class="ov-r"><span class="ov-k">Longitude</span> <span class="ov-v" id="ov-lon">—</span></div>
+      <div class="ov-d"></div>
+      <div class="ov-r"><span class="ov-k">Speed</span>     <span class="ov-v" id="ov-spd" style="color:var(--gr)">— km/h</span></div>
+      <div class="ov-r"><span class="ov-k">Heading</span>   <span class="ov-v" id="ov-hdg">—</span></div>
+      <div class="ov-d"></div>
+      <div class="ov-r"><span class="ov-k">GPS Fix</span>   <span class="ov-v" id="ov-gps" style="color:var(--am)">Searching…</span></div>
+      <div class="ov-r"><span class="ov-k">GSM</span>       <span class="ov-v" id="ov-gsm" style="color:var(--mu)">Standby</span></div>
+      <div class="ov-r"><span class="ov-k">Trail pts</span> <span class="ov-v" id="ov-trail" style="color:var(--mu)">0</span></div>
+    </div>
+
+    <!-- Follow banner -->
+    <div id="follow-banner" class="on">
+      <div class="fdot"></div>
+      <span id="follow-txt">Auto-follow ON</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ══════════════════════════════════════════════
+   CONFIGURE
+══════════════════════════════════════════════ */
+const firebaseConfig = {
+  apiKey:            "AIzaSyD_0Qq5Bs-uziMSnx0ivcCZAoTNlV52PrQ",
+  databaseURL:       "https://vehicle-accident-tra-default-rtdb.firebaseio.com/",
+  projectId:         "vehicle-accident-tra",
+  storageBucket:     "vehicle-accident-tra.firebasestorage.app",
+  messagingSenderId: "876648497187",
+  appId:             "1:876648497187:web:a55daeb0d078dc6581b196"
+};
+const DEVICE_ID   = "vehicle_001";
+const ALERT_PHONE = "+916374628655";
+
+/* ══════════════════════════════════════════════
+   TILE LAYERS  — OpenStreetMap / CartoDB / Topo
+══════════════════════════════════════════════ */
+const TILES = {
+  dark: {
+    url:  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attr: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    sub: 'abcd', max: 20
+  },
+  osm: {
+    url:  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attr: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    sub: 'abc', max: 19
+  },
+  topo: {
+    url:  'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attr: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://opentopomap.org">OpenTopoMap</a>',
+    sub: 'abc', max: 17
+  },
+  voyager: {
+    url:  'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    attr: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    sub: 'abcd', max: 20
+  }
+};
+
+/* ── State ─────────────────────────────────── */
+let prevLat = null, prevLon = null;
+let curHeading = 0, targetHeading = 0;
+let gsmWasOn = false, lastAccTs = 0, toastShown = false;
+let accelSeen = false, logCount = 0;
+let followMode = true;
+let currentTile = 'dark';
+let totalDist = 0;
+
+/* ── Leaflet objects ────────────────────────── */
+let map, tileLayer, vMarker, trailLine, startMarker, accMarker;
+let trail = [];            /* raw [lat,lon] array */
+let arrowMarkers = [];     /* directional arrow markers on trail */
+let startPos = null;
+
+/* Arrow every N metres along trail */
+const ARROW_INTERVAL_M = 30;
+let lastArrowDist = 0;
+
+/* ── Firebase ──────────────────────────────── */
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+/* ══════════════════════════════════════════════
+   MAP INIT
+══════════════════════════════════════════════ */
+function initMap() {
+  map = L.map('map', {
+    center: [11.0168, 76.9558], zoom: 16,
+    zoomControl: false,
+    preferCanvas: true          /* faster canvas rendering for trail */
+  });
+
+  L.control.zoom({ position: 'topright' }).addTo(map);
+  applyTile('dark');
+
+  /* ── Trail: two-layer effect ──────────────
+     Layer 1 (glow)  — wider, dimmer blue
+     Layer 2 (solid) — crisp line on top      */
+  trailGlow = L.polyline([], {
+    color: '#3d9eff', weight: 7, opacity: .18,
+    lineJoin: 'round', lineCap: 'round'
+  }).addTo(map);
+
+  trailLine = L.polyline([], {
+    color: '#3d9eff', weight: 2.5, opacity: .85,
+    lineJoin: 'round', lineCap: 'round'
+  }).addTo(map);
+
+  /* Vehicle marker */
+  vMarker = L.marker([11.0168, 76.9558], {
+    icon: buildVehicleIcon(0, '#3d9eff', false),
+    zIndexOffset: 1000, title: DEVICE_ID
+  }).addTo(map);
+
+  map.on('click', () => closeLayerPanel());
+  startListeners();
+}
+
+/* ══════════════════════════════════════════════
+   TILE LAYER MANAGEMENT
+══════════════════════════════════════════════ */
+function applyTile(name) {
+  if (tileLayer) map.removeLayer(tileLayer);
+  const t = TILES[name];
+  tileLayer = L.tileLayer(t.url, {
+    attribution: t.attr, subdomains: t.sub, maxZoom: t.max
+  }).addTo(map);
+  tileLayer.bringToBack();
+  currentTile = name;
+}
+
+function setLayer(name) {
+  if (name === currentTile) { closeLayerPanel(); return; }
+  applyTile(name);
+  document.querySelectorAll('.lp-o').forEach(el => el.classList.remove('sel'));
+  const el = $('lp-' + name);
+  if (el) el.classList.add('sel');
+  closeLayerPanel();
+}
+
+function toggleLayerPanel() { $('layer-panel').classList.toggle('open'); }
+function closeLayerPanel()  { $('layer-panel').classList.remove('open'); }
+
+/* ══════════════════════════════════════════════
+   VEHICLE ARROW ICON
+   SVG arrow that rotates via CSS transition
+══════════════════════════════════════════════ */
+function buildVehicleIcon(heading, color, danger) {
+  const c = color || '#3d9eff';
+  const ring = danger ? 'stroke:#ff3d3d;stroke-width:2' : 'stroke:#3d9eff;stroke-width:1.5;stroke-opacity:.5';
+  const svg = `
+<svg viewBox="-16 -26 32 38" width="40" height="40" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="0" cy="0" r="14" fill="rgba(0,0,0,.55)" ${ring}/>
+  <polygon points="0,-20 8,10 0,4 -8,10"
+    fill="${c}" stroke="rgba(255,255,255,.95)" stroke-width="1.2" stroke-linejoin="round"/>
+  <circle cx="0" cy="0" r="3.5" fill="rgba(255,255,255,.98)"/>
+</svg>`;
+  return L.divIcon({
+    className: '',
+    html: `<div id="v-arrow" style="
+      width:40px;height:40px;
+      transform:rotate(${heading}deg);
+      transform-origin:center center;
+      transition:transform .35s cubic-bezier(.25,.46,.45,.94);
+      filter:${danger
+        ? 'drop-shadow(0 0 8px rgba(255,61,61,.9))'
+        : 'drop-shadow(0 0 6px rgba(61,158,255,.7))'}
+    ">${svg}</div>`,
+    iconSize:   [40, 40],
+    iconAnchor: [20, 20],
+    popupAnchor:[0, -22]
+  });
+}
+
+/* Rotate + recolor without recreating marker */
+function rotateArrow(heading, color, danger) {
+  const el = document.getElementById('v-arrow');
+  if (!el) return;
+  el.style.transform = `rotate(${heading}deg)`;
+  el.style.filter = danger
+    ? 'drop-shadow(0 0 8px rgba(255,61,61,.9))'
+    : 'drop-shadow(0 0 6px rgba(61,158,255,.7))';
+  const poly = el.querySelector('polygon');
+  if (poly) poly.setAttribute('fill', color || '#3d9eff');
+  const circle = el.querySelector('circle:first-of-type');
+  if (circle) {
+    circle.setAttribute('stroke', danger ? '#ff3d3d' : '#3d9eff');
+    circle.setAttribute('stroke-opacity', danger ? '1' : '.5');
+  }
+}
+
+/* ══════════════════════════════════════════════
+   DIRECTIONAL TRAIL ARROWS
+   Small ➤ chevrons placed at intervals along trail
+══════════════════════════════════════════════ */
+function makeArrowIcon(heading, color) {
+  const c = color || '#3d9eff';
+  const svg = `<svg viewBox="-8 -8 16 16" width="16" height="16" xmlns="http://www.w3.org/2000/svg">
+    <polygon points="0,-6 5,4 0,1 -5,4"
+      fill="${c}" fill-opacity=".9" stroke="rgba(255,255,255,.4)" stroke-width=".8"/>
+  </svg>`;
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:16px;height:16px;transform:rotate(${heading}deg);transform-origin:center">${svg}</div>`,
+    iconSize:   [16, 16],
+    iconAnchor: [8,  8]
+  });
+}
+
+function addTrailArrow(lat, lon, heading, color) {
+  const m = L.marker([lat, lon], {
+    icon: makeArrowIcon(heading, color),
+    zIndexOffset: 100, interactive: false
+  }).addTo(map);
+  arrowMarkers.push(m);
+}
+
+/* Haversine distance in metres between two coords */
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+/* ══════════════════════════════════════════════
+   MAP TOOLBAR CONTROLS
+══════════════════════════════════════════════ */
+function toggleFollow() {
+  followMode = !followMode;
+  $('btn-follow').classList.toggle('active', followMode);
+  $('follow-banner').classList.toggle('on', followMode);
+  $('follow-txt').textContent = followMode ? 'Auto-follow ON' : 'Auto-follow OFF';
+}
+
+function zoomToVehicle() {
+  if (prevLat !== null)
+    map.flyTo([prevLat, prevLon], 17, { animate: true, duration: 1.2 });
+}
+
+function fitTrail() {
+  if (trail.length > 1)
+    map.flyToBounds(L.latLngBounds(trail), { padding: [50, 50], animate: true, duration: 1.2 });
+}
+
+function clearTrail() {
+  trail = [];
+  totalDist = 0;
+  lastArrowDist = 0;
+  trailLine.setLatLngs([]);
+  trailGlow.setLatLngs([]);
+  arrowMarkers.forEach(m => m.remove());
+  arrowMarkers = [];
+  $('ov-trail').textContent = '0';
+  if (startMarker) { startMarker.remove(); startMarker = null; startPos = null; }
+}
+
+/* ══════════════════════════════════════════════
+   FIREBASE LISTENERS
+══════════════════════════════════════════════ */
+function startListeners() {
+  db.ref('.info/connected').on('value', s => {
+    const ok = !!s.val();
+    setChip('chip-fb', ok ? 'ok' : 'err', 'Firebase');
+    setPill('pill-fb', ok ? 'p-ok' : 'p-e', ok ? 'Connected' : 'Offline');
+    $('sub-fb').textContent     = ok ? 'Realtime sync active' : 'Connection lost';
+    $('header-sub').textContent = ok ? 'Live · ' + DEVICE_ID : 'Disconnected';
+    if (!ok) lcdSet('Firebase Lost', 'Check network  ');
+  });
+
+  db.ref(DEVICE_ID).on('value', snap => {
+    const d = snap.val();
+    if (d) update(d);
+  });
+
+  db.ref('accidents').on('child_added', snap => {
+    const a = snap.val();
+    if (a) appendLog(a);
+  });
+}
+
+/* ══════════════════════════════════════════════
+   MAIN UPDATE
+══════════════════════════════════════════════ */
+function update(d) {
+  const lat   = d.lat        || 0;
+  const lon   = d.lon        || 0;
+  const speed = d.speed_kmh  || 0;
+  const sats  = d.satellites || 0;
+  const valid = !!d.gps_valid;
+  const ts    = d.timestamp ? new Date(d.timestamp * 1000) : new Date();
+
+  /* ── Heading ── */
+  if (valid && lat !== 0 && prevLat !== null) {
+    const dLat = lat - prevLat, dLon = lon - prevLon;
+    if (Math.abs(dLat) > 5e-6 || Math.abs(dLon) > 5e-6) {
+      let h = Math.atan2(dLon, dLat) * 180 / Math.PI;
+      if (h < 0) h += 360;
+      targetHeading = h;
+      curHeading = lerpAngle(curHeading, targetHeading, 0.4);
+    }
+  }
+  if (valid && lat !== 0) { prevLat = lat; prevLon = lon; }
+  const hdgStr = Math.round(curHeading) + '°  ' + compassDir(curHeading);
+
+  /* ── Speed HUD ── */
+  const spdEl = $('hud-spd');
+  spdEl.textContent = Math.round(speed);
+  spdEl.className   = 'hud-n ' + (speed > 100 ? 'spd-fast' : speed > 60 ? 'spd-mid' : 'spd-ok');
+  $('hud-sats').textContent = sats + ' sats';
+
+  /* ── Map overlay ── */
+  const sC = speed > 100 ? '#ff3d3d' : speed > 60 ? '#f5a623' : '#2dce6e';
+  $('ov-dev').textContent  = DEVICE_ID;
+  $('ov-lat').textContent  = lat.toFixed(6);
+  $('ov-lon').textContent  = lon.toFixed(6);
+  $('ov-spd').textContent  = speed.toFixed(1) + ' km/h';
+  $('ov-spd').style.color  = sC;
+  $('ov-hdg').textContent  = hdgStr;
+
+  /* ── Sidebar GPS ── */
+  $('c-lat').textContent  = Math.abs(lat).toFixed(6);
+  $('c-lon').textContent  = Math.abs(lon).toFixed(6);
+  $('c-latd').textContent = lat  >= 0 ? 'N' : 'S';
+  $('c-lond').textContent = lon  >= 0 ? 'E' : 'W';
+  $('c-sats').textContent = sats;
+  $('c-spd').textContent  = speed.toFixed(1) + ' km/h';
+  $('c-hdg').textContent  = hdgStr;
+  $('c-time').textContent = ts.toLocaleTimeString();
+  renderSatBars(sats);
+
+  /* ── GPS chip ── */
+  if (valid) {
+    setChip('chip-gps', 'ok', 'GPS Fixed');
+    setPill('pill-gps', 'p-ok', 'Fixed ✓');
+    $('sub-gps').textContent = sats + ' sats · ' + ts.toLocaleTimeString();
+    $('ov-gps').textContent  = 'Fixed ✓'; $('ov-gps').style.color = '#2dce6e';
+  } else {
+    setChip('chip-gps', 'warn', 'GPS Search');
+    setPill('pill-gps', 'p-w', 'Searching');
+    $('sub-gps').textContent = 'Searching… ' + sats + ' visible';
+    $('ov-gps').textContent  = 'Searching…'; $('ov-gps').style.color = '#f5a623';
+  }
+
+  /* ── Device chip ── */
+  if (d.online) {
+    setChip('chip-dev', 'ok', 'ESP32');
+    setPill('pill-dev', 'p-ok', 'Online ✓');
+    $('sub-dev').textContent = 'ESP32 heartbeat OK';
+  } else {
+    setChip('chip-dev', 'err', 'ESP32');
+    setPill('pill-dev', 'p-e', 'Offline');
+    $('sub-dev').textContent = 'No heartbeat';
+  }
+
+  /* ── Accel bars ── */
+  if (d.accel) {
+    const a = d.accel, M = 30;
+    setBar('bar-x', Math.abs(a.ax   || 0), M); $('val-x').textContent = f2(Math.abs(a.ax  || 0));
+    setBar('bar-y', Math.abs(a.ay   || 0), M); $('val-y').textContent = f2(Math.abs(a.ay  || 0));
+    setBar('bar-z', Math.abs(a.az   || 0), M); $('val-z').textContent = f2(Math.abs(a.az  || 0));
+    setBar('bar-n', Math.abs(a.net  || 0), M); $('val-n').textContent = f2(Math.abs(a.net || 0));
+    setBar('bar-j', Math.abs(a.jerk || 0), M); $('val-j').textContent = f2(Math.abs(a.jerk|| 0));
+    if (!accelSeen) {
+      accelSeen = true;
+      setPill('pill-accel', 'p-ok', 'Live ✓');
+      $('sub-accel').textContent = 'GY-61 streaming live';
+    }
+  }
+
+  /* ═══════════════════════════════════════════
+     MAP: real-time movement + trail + arrows
+  ═══════════════════════════════════════════ */
+  if (valid && lat !== 0) {
+    const pos = [lat, lon];
+
+    /* 1. Move vehicle marker */
+    vMarker.setLatLng(pos);
+
+    /* 2. Smooth arrow rotation via CSS */
+    const arrowColor = d.accident ? '#ff3d3d' : '#3d9eff';
+    rotateArrow(curHeading, arrowColor, !!d.accident);
+
+    /* 3. Start marker (once) */
+    if (!startPos) {
+      startPos = pos;
+      startMarker = L.circleMarker(pos, {
+        radius: 7, color: '#fff', weight: 2.5,
+        fillColor: '#2dce6e', fillOpacity: 1, zIndexOffset: 500
+      }).addTo(map).bindTooltip('Start', {
+        permanent: true, direction: 'top', offset: [0, -12],
+        className: 'tt-start'
+      });
+    }
+
+    /* 4. Trail append + distance tracking */
+    if (trail.length > 0) {
+      const prev = trail[trail.length - 1];
+      const segDist = haversine(prev[0], prev[1], pos[0], pos[1]);
+      if (segDist > 2) {          /* skip GPS jitter < 2 m */
+        totalDist += segDist;
+        trail.push(pos);
+        trailLine.setLatLngs(trail);
+        trailGlow.setLatLngs(trail);
+
+        /* 5. Place directional arrow every ARROW_INTERVAL_M metres */
+        if (totalDist - lastArrowDist >= ARROW_INTERVAL_M) {
+          lastArrowDist = totalDist;
+          addTrailArrow(lat, lon, curHeading, d.accident ? '#ff7070' : '#3d9eff');
+        }
+      }
+    } else {
+      trail.push(pos);
+      trailLine.setLatLngs(trail);
+      trailGlow.setLatLngs(trail);
+    }
+
+    /* 6. Update overlay trail count */
+    $('ov-trail').textContent  = trail.length;
+
+    /* 7. Auto-follow */
+    if (followMode) {
+      const c = map.getCenter();
+      if (Math.abs(c.lat - lat) > 0.001 || Math.abs(c.lng - lon) > 0.0015) {
+        map.panTo(pos, { animate: true, duration: 0.5, easeLinearity: 0.5 });
+      }
+    }
+  }
+
+  /* ── LCD mirror ── */
+  if (!d.accident) {
+    lcdSet(
+      valid ? 'L:' + lat.toFixed(4) + (lat >= 0 ? 'N' : 'S') : 'GPS Searching..',
+      valid ? speed.toFixed(1) + 'km S:' + sats + '     '    : 'Sats:' + sats + '         '
+    );
+  }
+
+  /* ═══════════════════════════════════════════
+     ACCIDENT HANDLING
+  ═══════════════════════════════════════════ */
+  if (d.accident) {
+    const impact = d.impact || 0, jerk = d.jerk || 0;
+    $('acc-banner').classList.add('active');
+    $('b-impact').textContent = impact.toFixed(1);
+    $('b-jerk').textContent   = jerk.toFixed(1);
+    $('b-lat').textContent    = lat.toFixed(6);
+    $('b-lon').textContent    = lon.toFixed(6);
+    $('b-time').textContent   = ts.toLocaleTimeString();
+    document.title = '⚠ ACCIDENT — AccidentTracker';
+    setChip('chip-gsm', 'info', 'GSM Active');
+    setPill('pill-gsm', 'p-g', 'Alert Sent ✓');
+    $('sub-gsm').textContent = 'Alert sent · ' + ts.toLocaleTimeString();
+    $('ov-gsm').textContent  = 'Alert Sent ✓'; $('ov-gsm').style.color = '#a78bfa';
+    $('sms-row').classList.add('show');
+    $('sub-sms').textContent = ts.toLocaleTimeString() + '  →  ' + ALERT_PHONE;
+    lcdSet('!! ACCIDENT !!', lat.toFixed(4) + ',' + lon.toFixed(4));
+
+    const evtTs = d.acc_ts || d.timestamp || 0;
+    if (evtTs && evtTs !== lastAccTs && !toastShown) {
+      lastAccTs = evtTs; toastShown = true; showToast(impact, lat, lon, ts);
+    }
+    gsmWasOn = true;
+
+    /* Pulsing accident marker */
+    if (valid && lat !== 0 && !accMarker) {
+      accMarker = L.marker([lat, lon], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div style="position:relative;width:32px;height:32px">
+            <div class="acc-pulse" style="position:absolute;inset:0"></div>
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                        background:rgba(255,61,61,.85);border-radius:50%;border:2px solid #fff;
+                        font-size:14px;z-index:2">⚠</div>
+          </div>`,
+          iconSize:   [32, 32],
+          iconAnchor: [16, 16],
+          popupAnchor:[0, -20]
+        }),
+        zIndexOffset: 2000
+      }).addTo(map).bindPopup(
+        `<div style="line-height:1.9;font-size:12px">
+           <b style="color:#ff3d3d">⚠ Accident Detected</b><br>
+           Impact: <b>${impact.toFixed(1)} m/s²</b><br>
+           Jerk: <b>${jerk.toFixed(1)} m/s³</b><br>
+           <span style="font-family:monospace">${lat.toFixed(5)}, ${lon.toFixed(5)}</span><br>
+           <span style="color:#4a5a6a">${ts.toLocaleString()}</span><br>
+           <a href="https://maps.google.com/?q=${lat},${lon}" target="_blank"
+              style="color:#a78bfa">Open in Google Maps ↗</a>
+         </div>`
+      ).openPopup();
+    }
+
+  } else {
+    $('acc-banner').classList.remove('active');
+    document.title = 'AccidentTracker — Command Center';
+    if (gsmWasOn) {
+      gsmWasOn = false;
+      if (accMarker) { accMarker.remove(); accMarker = null; }
+    }
+    setChip('chip-gsm', '', 'GSM');
+    setPill('pill-gsm', 'p-g', 'Standby');
+    if (!$('sms-row').classList.contains('show')) {
+      $('sub-gsm').textContent = 'Ready · no active alert';
+      $('ov-gsm').textContent  = 'Standby'; $('ov-gsm').style.color = 'var(--mu)';
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════
+   ALERT TOAST
+══════════════════════════════════════════════ */
+function showToast(impact, lat, lon, ts) {
+  const url = `https://maps.google.com/?q=${lat.toFixed(6)},${lon.toFixed(6)}`;
+  $('t-phone').textContent  = ALERT_PHONE;
+  $('t-impact').textContent = impact.toFixed(1) + ' m/s²';
+  $('t-lat').textContent    = Math.abs(lat).toFixed(6) + '° ' + (lat >= 0 ? 'N' : 'S');
+  $('t-lon').textContent    = Math.abs(lon).toFixed(6) + '° ' + (lon >= 0 ? 'E' : 'W');
+  $('t-maplink').href       = url;
+  $('t-foot').textContent   = 'Sent at ' + ts.toLocaleTimeString();
+  $('alert-toast').classList.add('show');
+}
+function closeToast() { $('alert-toast').classList.remove('show'); toastShown = false; }
+
+/* ══════════════════════════════════════════════
+   ACCIDENT LOG
+══════════════════════════════════════════════ */
+function appendLog(a) {
+  const log = $('acc-log');
+  const ph  = log.querySelector('[style*="color:var(--mu)"]');
+  if (ph) ph.remove();
+  logCount++;
+  $('log-count').textContent = logCount + ' event' + (logCount !== 1 ? 's' : '');
+  const ts = a.timestamp ? new Date(a.timestamp * 1000).toLocaleString() : '—';
+  const el = document.createElement('div');
+  el.className = 'log-item';
+  el.innerHTML =
+    `<div class="log-ts">${ts} · ${a.source || 'sensor'}</div>` +
+    `<div class="log-imp">Impact: ${(a.impact||0).toFixed(1)} m/s²  Jerk: ${(a.jerk||0).toFixed(1)}</div>` +
+    `<div class="log-crd">${(a.lat||0).toFixed(5)}, ${(a.lon||0).toFixed(5)}  ·  ${(a.speed_kmh||0).toFixed(1)} km/h</div>`;
+  log.prepend(el);
+}
+
+/* ══════════════════════════════════════════════
+   LCD
+══════════════════════════════════════════════ */
+function lcdSet(r0, r1) {
+  const pad = s => (s + '                ').substring(0, 16);
+  $('lcd-l0').textContent = pad(r0);
+  $('lcd-l1').textContent = pad(r1);
+}
+
+/* ══════════════════════════════════════════════
+   SAT BARS
+══════════════════════════════════════════════ */
+function renderSatBars(n) {
+  const c = $('sat-bars'); c.innerHTML = '';
+  const h = [4,6,9,11,13,12,10,14,8,12,10,7];
+  for (let i = 0; i < 12; i++) {
+    const b = document.createElement('div');
+    b.className = 'sat-bar';
+    b.style.cssText = `height:${h[i]}px;width:4px;background:${i<n?'#2dce6e':'var(--s4)'}`;
+    c.appendChild(b);
+  }
+}
+
+/* ══════════════════════════════════════════════
+   HELPERS
+══════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const f2 = v => v.toFixed(2);
+
+function setBar(id, v, max) {
+  const el = $(id);
+  if (el) el.style.width = Math.min(100, (v/max)*100).toFixed(1) + '%';
+}
+function setChip(id, cls, label) {
+  const el = $(id); if (!el) return;
+  el.className = 'chip' + (cls ? ' '+cls : '');
+  el.innerHTML = '<div class="cdot"></div>\u00a0' + label;
+}
+function setPill(id, cls, label) {
+  const el = $(id); if (!el) return;
+  el.className = 'pill ' + cls;
+  el.textContent = label;
+}
+function compassDir(d) {
+  return ['N','NE','E','SE','S','SW','W','NW'][Math.round(d/45)%8];
+}
+function lerpAngle(a, b, t) {
+  let diff = b - a;
+  while (diff >  180) diff -= 360;
+  while (diff < -180) diff += 360;
+  return a + diff * t;
+}
+function copyCoords() {
+  const lat = $('c-lat').textContent, ld = $('c-latd').textContent;
+  const lon = $('c-lon').textContent, ln = $('c-lond').textContent;
+  navigator.clipboard.writeText(`${lat}°${ld}, ${lon}°${ln}`).then(() => {
+    const b = document.querySelector('.cbtn');
+    b.textContent = '✓ Copied!';
+    setTimeout(() => b.textContent = '⎘ Copy', 1800);
+  });
+}
+
+/* ══════════════════════════════════════════════
+   BOOT
+══════════════════════════════════════════════ */
+initMap();
+lcdSet('Accident Tracker', 'Connecting...   ');
+</script>
+</body>
+</html>
